@@ -1,0 +1,23 @@
+# Ambiente virtual
+venv/
+.venv/
+
+# Variáveis de ambiente
+.env
+
+# Cache Python
+__pycache__/
+*.pyc
+*.pyo
+
+# PyCharm
+.idea/
+
+# Testes e cobertura
+.pytest_cache/
+htmlcov/
+.coverage
+
+# SO
+.DS_Store
+Thumbs.db
