@@ -1,0 +1,11 @@
+RANKING_REQUEST_QUEUE = "ia.ranking.request"
+RANKING_RESPONSE_QUEUE = "ia.ranking.response"
+RESUMO_REQUEST_QUEUE = "ia.resumo.request"
+RESUMO_RESPONSE_QUEUE = "ia.resumo.response"
+
+TODAS_AS_FILAS = [
+    RANKING_REQUEST_QUEUE,
+    RANKING_RESPONSE_QUEUE,
+    RESUMO_REQUEST_QUEUE,
+    RESUMO_RESPONSE_QUEUE,
+]
