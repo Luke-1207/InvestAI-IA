@@ -4,6 +4,8 @@ from app.models import AtivoFixoSchema, ResumoRequestSchema, ResumoResponseSchem
 from app.models.enums import ModuloRanking
 from app.prompts import fixa_template, variavel_template
 from app.services.llm_client import LlmIndisponivelError, gerar_texto
+from app.services.analise_mercado import calcular_dy_vs_media_setorial, calcular_posicao_52_semanas
+from app.services.news_client import buscar_manchetes_recentes
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +27,12 @@ def gerar_resumo(request: ResumoRequestSchema) -> ResumoResponseSchema:
 
 def _montar_prompt(request: ResumoRequestSchema) -> str:
     if request.modulo == ModuloRanking.VARIAVEL:
-        return variavel_template.montar_prompt(request.ativo, request.perfil)
+        posicao_52_semanas = calcular_posicao_52_semanas(request.ativo)
+        dy_vs_media = calcular_dy_vs_media_setorial(request.ativo)
+        manchetes = buscar_manchetes_recentes(request.ativo.nome or request.ativo.codigo)
+        return variavel_template.montar_prompt(
+            request.ativo, request.perfil, posicao_52_semanas, dy_vs_media, manchetes
+        )
     return fixa_template.montar_prompt(request.ativo, request.perfil)
 
 

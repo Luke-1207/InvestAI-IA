@@ -1,5 +1,5 @@
 [project]
 name = "investai-ia"
-version = "0.6.0"
+version = "0.7.0"
 description = "Microsserviço de IA da plataforma InvestAI - ranqueamento de ativos e resumos em linguagem natural"
 requires-python = ">=3.11"
