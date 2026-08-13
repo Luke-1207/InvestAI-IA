@@ -4,8 +4,7 @@ from fastapi.testclient import TestClient
 
 from main import create_app
 
-client = TestClient(create_app())
-
+client = TestClient(create_app(start_consumers=False))
 
 def test_health_deve_retornar_status_ok_e_rabbitmq_true_quando_conexao_bem_sucedida():
     with patch("app.api.health.pika.BlockingConnection") as mock_connection:

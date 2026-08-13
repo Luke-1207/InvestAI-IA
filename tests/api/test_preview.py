@@ -27,7 +27,7 @@ def ativo_resumo_dict():
 
 
 class TestPreviewHabilitado:
-    client = TestClient(create_app(enable_preview=True))
+    client = TestClient(create_app(enable_preview=True, start_consumers=False))
 
     def test_ranking_preview_deve_retornar_200_com_lista_rankeada(self):
         payload = {
@@ -64,7 +64,7 @@ class TestPreviewHabilitado:
 
 
 class TestPreviewDesabilitado:
-    client = TestClient(create_app(enable_preview=False))
+    client = TestClient(create_app(enable_preview=False, start_consumers=False))
 
     def test_ranking_preview_nao_deve_existir_quando_desabilitado(self):
         response = self.client.post("/ranking/preview", json={})

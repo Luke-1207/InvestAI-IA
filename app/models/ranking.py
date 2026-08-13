@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, model_validator
 from app.models.ativo import AtivoFixoSchema, AtivoVariavelSchema
 from app.models.enums import Compatibilidade, ModuloRanking
 from app.models.perfil import PerfilSchema
+from typing import List, Optional, Union
 
 
 class RankingRequestSchema(BaseModel):
@@ -13,6 +14,7 @@ class RankingRequestSchema(BaseModel):
     modulo: ModuloRanking
     perfil: PerfilSchema
     ativos: List[Union[AtivoVariavelSchema, AtivoFixoSchema]] = Field(default_factory=list)
+    erro: Optional[str] = None
 
     @model_validator(mode="after")
     def ativos_devem_condizer_com_modulo(self) -> "RankingRequestSchema":
