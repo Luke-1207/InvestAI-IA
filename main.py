@@ -8,7 +8,7 @@ def create_app(enable_preview: bool | None = None) -> FastAPI:
     app = FastAPI(
         title="InvestAI - Microsserviço IA",
         description="Ranqueamento de ativos por perfil e geração de resumos em linguagem natural.",
-        version="0.3.0",
+        version="0.4.0",
     )
 
     app.include_router(health.router)
