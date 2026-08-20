@@ -84,15 +84,16 @@ class TestHorizonteXVencimento:
         assert dentro.score > muito_alem.score
 
     def test_distancia_de_um_nivel_deve_ser_neutra(self):
-        neutro_curto_medio = ranquear_um(
-            perfil(horizonte="CURTO_PRAZO"),
-            titulo(vencimento=data_em(800), investimentoMinimo=999999),  # cai em MEDIO_PRAZO
+        resultado = ranquear_um(
+            perfil(horizonte="CURTO_PRAZO", perfilRisco="MODERADO", objetivo="CRESCIMENTO_PATRIMONIO",
+                   valorDisponivel=1),
+            titulo(
+                vencimento=data_em(800),
+                indexador="CDI", liquidez="NO_VENCIMENTO",
+                isentoIR=False, garantidoFGC=False, investimentoMinimo=999999,
+            ),
         )
-        sem_criterio_nenhum = ranquear_um(
-            perfil(horizonte="MODERADO" if False else "CURTO_PRAZO", perfilRisco="MODERADO", objetivo="CRESCIMENTO_PATRIMONIO"),
-            titulo(vencimento=data_em(800), indexador="CDI", liquidez="NO_VENCIMENTO", investimentoMinimo=999999),
-        )
-        assert neutro_curto_medio.score == sem_criterio_nenhum.score
+        assert resultado.score == 0
 
     @pytest.mark.parametrize("dias,horizonte_esperado", [
         (365, "CURTO_PRAZO"), (366, "MEDIO_PRAZO"), (1825, "MEDIO_PRAZO"), (1826, "LONGO_PRAZO"),
@@ -200,7 +201,9 @@ class TestJustificativa:
 
     def test_titulo_sem_nenhum_criterio_positivo_deve_ter_justificativa_generica(self):
         resultado = ranquear_um(
-            perfil(perfilRisco="MODERADO", horizonte="MEDIO_PRAZO", objetivo="CRESCIMENTO_PATRIMONIO", valorDisponivel=1),
-            titulo(indexador="CDI", vencimento=data_em(800), liquidez="NO_VENCIMENTO", isentoIR=False, garantidoFGC=False, investimentoMinimo=999999),
+            perfil(perfilRisco="MODERADO", horizonte="CURTO_PRAZO", objetivo="CRESCIMENTO_PATRIMONIO",
+                   valorDisponivel=1),
+            titulo(indexador="CDI", vencimento=data_em(800), liquidez="NO_VENCIMENTO", isentoIR=False,
+                   garantidoFGC=False, investimentoMinimo=999999),
         )
         assert resultado.justificativa == "Título dentro dos critérios mínimos avaliados para o seu perfil."
