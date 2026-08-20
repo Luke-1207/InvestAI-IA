@@ -167,18 +167,3 @@ class TestJustificativa:
             ativo(tipo="FII", volatilidade="BAIXA", dy=5.0, preco=999999),
         )
         assert resultado.justificativa
-
-
-class TestRendaFixaAindaEhStub:
-    def test_modulo_fixa_deve_continuar_usando_stub_temporario(self):
-        request = RankingRequestSchema(
-            correlationId=CORRELATION_ID, modulo="FIXA", perfil=perfil(),
-            ativos=[{
-                "codigo": "TESOURO_SELIC_2029", "tipo": "TESOURO", "indexador": "SELIC",
-                "taxaPercentual": 100.0, "vencimento": "2029-01-01",
-                "investimentoMinimo": 30.0, "liquidez": "DIARIA",
-            }],
-        )
-        response = ranking_service.ranquear(request)
-        assert response.ativos[0].score == 50
-        assert response.ativos[0].compatibilidade == "MEDIA"

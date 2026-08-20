@@ -1,20 +1,30 @@
+from datetime import date
 from typing import List
 
 from app.models import (
+    AtivoFixoSchema,
     AtivoRankeadoSchema,
     AtivoVariavelSchema,
     PerfilSchema,
     RankingRequestSchema,
     RankingResponseSchema,
 )
-from app.models.enums import HorizonteInvestimento, ModuloRanking, ObjetivoFinanceiro, PreferenciaSetor
+from app.models.enums import (
+    HorizonteInvestimento,
+    Indexador,
+    Liquidez,
+    ModuloRanking,
+    ObjetivoFinanceiro,
+    PerfilRisco,
+    PreferenciaSetor,
+)
 from app.services import ranking_config as cfg
 
 
 def ranquear(request: RankingRequestSchema) -> RankingResponseSchema:
     if request.modulo == ModuloRanking.VARIAVEL:
         return _ranquear_renda_variavel(request)
-    return _ranquear_stub_renda_fixa(request)
+    return _ranquear_renda_fixa(request)
 
 
 def _ranquear_renda_variavel(request: RankingRequestSchema) -> RankingResponseSchema:
@@ -116,15 +126,98 @@ def _gerar_justificativa(ativo: AtivoVariavelSchema, perfil: PerfilSchema, crite
     return ". ".join(frases) + "."
 
 
-def _ranquear_stub_renda_fixa(request: RankingRequestSchema) -> RankingResponseSchema:
-    """STUB TEMPORÁRIO para RENDA FIXA. Algoritmo real chega no INVAI-45."""
-    ativos_rankeados = [
-        AtivoRankeadoSchema(
-            codigo=ativo.codigo,
-            score=50,
-            compatibilidade="MEDIA",
-            justificativa="Stub temporário — algoritmo de renda fixa chega no INVAI-45.",
-        )
-        for ativo in request.ativos
-    ]
+def _ranquear_renda_fixa(request: RankingRequestSchema) -> RankingResponseSchema:
+    perfil = request.perfil
+    ativos_rankeados = [_rankear_titulo(titulo, perfil) for titulo in request.ativos]
     return RankingResponseSchema(correlationId=request.correlationId, ativos=ativos_rankeados)
+
+
+def _rankear_titulo(titulo: AtivoFixoSchema, perfil: PerfilSchema) -> AtivoRankeadoSchema:
+    criterios = _avaliar_criterios_fixa(titulo, perfil)
+
+    score_bruto = sum(criterios.values())
+    score = max(cfg.SCORE_MINIMO, min(cfg.SCORE_MAXIMO, score_bruto))
+
+    return AtivoRankeadoSchema(
+        codigo=titulo.codigo,
+        score=score,
+        compatibilidade=_classificar_compatibilidade(score),
+        justificativa=_gerar_justificativa_fixa(titulo, perfil, criterios),
+    )
+
+
+def _avaliar_criterios_fixa(titulo: AtivoFixoSchema, perfil: PerfilSchema) -> dict:
+    criterios: dict = {}
+
+    if perfil.perfilRisco == PerfilRisco.CONSERVADOR and titulo.indexador in cfg.INDEXADORES_PREVISIVEIS:
+        criterios["indexador_previsivel_conservador"] = cfg.PESOS_FIXA["indexador_previsivel_conservador"]
+
+    if perfil.perfilRisco == PerfilRisco.ARROJADO and titulo.indexador == Indexador.PREFIXADO:
+        criterios["indexador_arrojado_prefixado"] = cfg.PESOS_FIXA["indexador_arrojado_prefixado"]
+
+    if perfil.objetivo == ObjetivoFinanceiro.PRESERVAR_CAPITAL and titulo.indexador == Indexador.IPCA:
+        criterios["indexador_protege_inflacao"] = cfg.PESOS_FIXA["indexador_protege_inflacao"]
+
+    distancia = _distancia_horizonte_vencimento(titulo.vencimento, perfil.horizonte)
+    if distancia == 0:
+        criterios["vencimento_dentro_horizonte"] = cfg.PESOS_FIXA["vencimento_dentro_horizonte"]
+    elif distancia >= 2:
+        criterios["vencimento_muito_alem_horizonte"] = cfg.PESOS_FIXA["vencimento_muito_alem_horizonte"]
+
+    if perfil.horizonte == HorizonteInvestimento.CURTO_PRAZO and titulo.liquidez == Liquidez.DIARIA:
+        criterios["liquidez_diaria_curto_prazo"] = cfg.PESOS_FIXA["liquidez_diaria_curto_prazo"]
+
+    if perfil.objetivo == ObjetivoFinanceiro.RENDA_PASSIVA and titulo.isentoIR:
+        criterios["isento_ir_renda_passiva"] = cfg.PESOS_FIXA["isento_ir_renda_passiva"]
+
+    if titulo.investimentoMinimo <= perfil.valorDisponivel:
+        criterios["investimento_acessivel"] = cfg.PESOS_FIXA["investimento_acessivel"]
+
+    if perfil.perfilRisco == PerfilRisco.CONSERVADOR and titulo.garantidoFGC:
+        criterios["garantia_fgc_conservador"] = cfg.PESOS_FIXA["garantia_fgc_conservador"]
+
+    return criterios
+
+
+def _classificar_horizonte_por_dias(dias: int) -> HorizonteInvestimento:
+    if dias <= cfg.DIAS_LIMITE_CURTO_PRAZO:
+        return HorizonteInvestimento.CURTO_PRAZO
+    if dias <= cfg.DIAS_LIMITE_MEDIO_PRAZO:
+        return HorizonteInvestimento.MEDIO_PRAZO
+    return HorizonteInvestimento.LONGO_PRAZO
+
+
+def _distancia_horizonte_vencimento(vencimento: date, horizonte_perfil: HorizonteInvestimento) -> int:
+    dias = (vencimento - date.today()).days
+    horizonte_titulo = _classificar_horizonte_por_dias(dias)
+    return abs(cfg.HORIZONTE_ORDEM.index(horizonte_titulo) - cfg.HORIZONTE_ORDEM.index(horizonte_perfil))
+
+
+_TEMPLATES_JUSTIFICATIVA_FIXA = {
+    "indexador_previsivel_conservador": lambda t, p: f"Indexador {t.indexador.value} é previsível, alinhado ao perfil conservador",
+    "indexador_arrojado_prefixado": lambda t, p: "Taxa prefixada é uma aposta compatível com o perfil arrojado",
+    "indexador_protege_inflacao": lambda t, p: "Indexação ao IPCA protege o poder de compra, alinhado ao objetivo de preservar capital",
+    "vencimento_dentro_horizonte": lambda t, p: f"Vencimento compatível com o horizonte de {p.horizonte.value.lower().replace('_', ' ')}",
+    "vencimento_muito_alem_horizonte": lambda t, p: "Vencimento muito além do horizonte de investimento informado",
+    "liquidez_diaria_curto_prazo": lambda t, p: "Liquidez diária é importante para quem pode precisar do dinheiro em breve",
+    "isento_ir_renda_passiva": lambda t, p: "Isenção de Imposto de Renda favorece o objetivo de renda passiva",
+    "investimento_acessivel": lambda t, p: "Investimento mínimo compatível com o valor disponível informado",
+    "garantia_fgc_conservador": lambda t, p: "Garantia do FGC traz segurança adicional, alinhada ao perfil conservador",
+}
+
+
+def _gerar_justificativa_fixa(titulo: AtivoFixoSchema, perfil: PerfilSchema, criterios: dict) -> str:
+    ordenados = sorted(criterios.items(), key=lambda item: abs(item[1]), reverse=True)
+
+    frases = []
+    for nome, _ in ordenados:
+        gerador = _TEMPLATES_JUSTIFICATIVA_FIXA.get(nome)
+        if gerador is None:
+            continue
+        frases.append(gerador(titulo, perfil))
+        if len(frases) == 2:
+            break
+
+    if not frases:
+        return "Título dentro dos critérios mínimos avaliados para o seu perfil."
+    return ". ".join(frases) + "."
