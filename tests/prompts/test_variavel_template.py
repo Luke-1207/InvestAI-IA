@@ -34,3 +34,27 @@ def test_montar_prompt_deve_lidar_com_campos_opcionais_ausentes():
 
     assert "não disponível" in prompt
     assert "None" not in prompt
+
+def test_montar_prompt_deve_incluir_glossario():
+    ativo = AtivoVariavelSchema(
+        codigo="TAEE3", tipo="ACAO", setor="Energia Elétrica",
+        preco=38.42, dy=6.8, variacao30d=5.1,
+    )
+    prompt = variavel_template.montar_prompt(ativo, perfil())
+    assert "Dividend Yield (DY)" in prompt
+    assert "P/VP" in prompt
+
+
+def test_montar_prompt_deve_incluir_fatos_calculados_quando_fornecidos():
+    ativo = AtivoVariavelSchema(
+        codigo="TAEE3", tipo="ACAO", setor="Energia Elétrica",
+        preco=38.42, dy=6.8, variacao30d=5.1,
+    )
+    prompt = variavel_template.montar_prompt(
+        ativo, perfil(),
+        posicao_52_semanas="próxima ao topo da faixa (93% do intervalo)",
+        dy_vs_media="DY acima da média do setor",
+        manchetes=["Setor elétrico tem estabilidade regulatória"],
+    )
+    assert "próxima ao topo" in prompt
+    assert "Setor elétrico tem estabilidade regulatória" in prompt

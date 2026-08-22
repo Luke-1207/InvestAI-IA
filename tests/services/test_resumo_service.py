@@ -26,8 +26,9 @@ def ativo_fixo_dict():
     )
 
 
+@patch("app.services.resumo_service.buscar_manchetes_recentes", return_value=[])
 @patch("app.services.resumo_service.gerar_texto")
-def test_gerar_resumo_deve_retornar_texto_do_llm_quando_sucesso(mock_gerar_texto):
+def test_gerar_resumo_deve_retornar_texto_do_llm_quando_sucesso(mock_gerar_texto, mock_manchetes):
     mock_gerar_texto.return_value = "Resumo gerado pelo LLM."
 
     request = ResumoRequestSchema(
@@ -41,8 +42,9 @@ def test_gerar_resumo_deve_retornar_texto_do_llm_quando_sucesso(mock_gerar_texto
     assert response.erro is None
 
 
+@patch("app.services.resumo_service.buscar_manchetes_recentes", return_value=[])
 @patch("app.services.resumo_service.gerar_texto")
-def test_gerar_resumo_deve_usar_fallback_quando_llm_indisponivel(mock_gerar_texto):
+def test_gerar_resumo_deve_usar_fallback_quando_llm_indisponivel(mock_gerar_texto, mock_manchetes):
     mock_gerar_texto.side_effect = LlmIndisponivelError("timeout")
 
     request = ResumoRequestSchema(
