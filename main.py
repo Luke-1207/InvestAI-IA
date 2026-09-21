@@ -11,10 +11,11 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 
 
 def _iniciar_consumers_em_threads() -> None:
-    from app.consumers import ranking_consumer, resumo_consumer
+    from app.consumers import comparacao_consumer, ranking_consumer, resumo_consumer
 
     threading.Thread(target=ranking_consumer.iniciar, name="ranking-consumer", daemon=True).start()
     threading.Thread(target=resumo_consumer.iniciar, name="resumo-consumer", daemon=True).start()
+    threading.Thread(target=comparacao_consumer.iniciar, name="comparacao-consumer", daemon=True).start()
 
 
 def create_app(enable_preview: bool | None = None, start_consumers: bool = True) -> FastAPI:
@@ -29,7 +30,7 @@ def create_app(enable_preview: bool | None = None, start_consumers: bool = True)
     app = FastAPI(
         title="InvestAI - Microsserviço IA",
         description="Ranqueamento de ativos por perfil e geração de resumos em linguagem natural.",
-        version="0.8.3",
+        version="0.8.4",
         lifespan=lifespan,
     )
 
