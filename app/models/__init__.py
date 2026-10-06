@@ -1,4 +1,5 @@
 from app.models.ativo import AtivoFixoSchema, AtivoVariavelSchema, Variacao52SemanasSchema
+from app.models.comparacao import ComparacaoRequestSchema, ComparacaoResponseSchema
 from app.models.enums import (
     Compatibilidade,
     HorizonteInvestimento,
@@ -27,6 +28,8 @@ __all__ = [
     "RankingResponseSchema",
     "ResumoRequestSchema",
     "ResumoResponseSchema",
+    "ComparacaoRequestSchema",
+    "ComparacaoResponseSchema",
     "Compatibilidade",
     "HorizonteInvestimento",
     "Indexador",

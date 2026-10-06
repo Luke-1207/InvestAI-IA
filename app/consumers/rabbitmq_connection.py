@@ -17,7 +17,7 @@ BACKOFF_MAXIMO_SEGUNDOS = 60
 
 
 def _declarar_filas(channel: BlockingChannel) -> None:
-    """Declara as 4 filas com durable=True — espelha o RabbitConfig do lado Java."""
+    """Declara as 6 filas com durable=True — espelha o RabbitConfig do lado Java."""
     for fila in TODAS_AS_FILAS:
         channel.queue_declare(queue=fila, durable=True)
 
