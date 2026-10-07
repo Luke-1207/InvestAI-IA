@@ -25,6 +25,7 @@ def gerar_veredito(request: ComparacaoRequestSchema) -> ComparacaoResponseSchema
 def _veredito_fallback(request: ComparacaoRequestSchema) -> str:
     return (
         f"Não foi possível gerar uma análise comparativa detalhada agora. "
-        f"Avalie {request.ativoA.codigo} e {request.ativoB.codigo} considerando "
+        f"Avalie {comparacao_template.rotulo_ativo(request.ativoA)} e "
+        f"{comparacao_template.rotulo_ativo(request.ativoB)} considerando "
         f"seu perfil de risco e horizonte de investimento antes de decidir."
     )

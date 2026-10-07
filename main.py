@@ -30,7 +30,7 @@ def create_app(enable_preview: bool | None = None, start_consumers: bool = True)
     app = FastAPI(
         title="InvestAI - Microsserviço IA",
         description="Ranqueamento de ativos por perfil e geração de resumos em linguagem natural.",
-        version="0.8.4",
+        version="0.8.5",
         lifespan=lifespan,
     )
 
