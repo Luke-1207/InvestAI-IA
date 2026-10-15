@@ -3,6 +3,7 @@ from datetime import date, timedelta
 import pytest
 
 from app.models import PerfilSchema, RankingRequestSchema
+from app.services import ranking_config as cfg
 from app.services import ranking_service
 from app.services.ranking_service import _classificar_compatibilidade
 
@@ -41,118 +42,137 @@ def ranquear_um(perfil_schema, titulo_dict):
     return response.ativos[0] if response.ativos else None
 
 
+class TestPesos:
+    def test_soma_dos_melhores_criterios_deve_fechar_100(self):
+        p = cfg.PESOS_FIXA
+        maximo = (p["indexador_ideal"] + p["vencimento_no_horizonte"] + p["liquidez_adequada"]
+                  + p["objetivo_alinhado"] + p["investimento_acessivel"] + p["garantia"])
+        assert maximo == 100
+
+    def test_todo_perfil_de_risco_deve_ter_um_indexador_ideal(self):
+        for risco, pesos in cfg.PESO_INDEXADOR.items():
+            assert max(pesos.values()) == cfg.PESOS_FIXA["indexador_ideal"], risco
+
+
+class TestCenariosIguaisAoJava:
+    """Mesmos cenários de RendaFixaPontuacaoServiceTest, para garantir que os dois motores dão a mesma leitura."""
+
+    def test_arrojado_com_tesouro_prefixado_longo_deve_chegar_a_100(self):
+        resultado = ranquear_um(
+            perfil(perfilRisco="ARROJADO", horizonte="LONGO_PRAZO", objetivo="CRESCIMENTO_PATRIMONIO", valorDisponivel=9999),
+            titulo(tipo="TESOURO", indexador="PREFIXADO", vencimento=data_em(3000), liquidez="DIARIA", investimentoMinimo=30),
+        )
+        assert resultado.score == 100
+
+    def test_conservador_de_curto_prazo_com_tesouro_selic_deve_ser_alta(self):
+        resultado = ranquear_um(
+            perfil(perfilRisco="CONSERVADOR", horizonte="CURTO_PRAZO", objetivo="RENDA_PASSIVA", valorDisponivel=9999),
+            titulo(tipo="TESOURO", indexador="SELIC", vencimento=data_em(100), liquidez="DIARIA", investimentoMinimo=150),
+        )
+        assert resultado.score == 90
+        assert resultado.compatibilidade == "ALTA"
+
+    def test_moderado_agora_pode_chegar_a_alta(self):
+        resultado = ranquear_um(
+            perfil(perfilRisco="MODERADO", horizonte="LONGO_PRAZO", objetivo="PRESERVAR_CAPITAL", valorDisponivel=500),
+            titulo(tipo="CDB", indexador="IPCA", vencimento=data_em(2500), liquidez="NO_VENCIMENTO",
+                   garantidoFGC=True, investimentoMinimo=1000),
+        )
+        assert resultado.score == 90
+        assert resultado.compatibilidade == "ALTA"
+
+    def test_combinacao_parcial_deve_ser_media(self):
+        resultado = ranquear_um(
+            perfil(perfilRisco="MODERADO", horizonte="MEDIO_PRAZO", objetivo="CRESCIMENTO_PATRIMONIO", valorDisponivel=5000),
+            titulo(tipo="LCI", indexador="CDI", vencimento=data_em(1000), liquidez="NO_VENCIMENTO",
+                   isentoIR=True, garantidoFGC=True, investimentoMinimo=1000),
+        )
+        assert resultado.score == 76
+        assert resultado.compatibilidade == "MEDIA"
+
+    def test_titulo_que_nao_combina_deve_ser_baixa(self):
+        resultado = ranquear_um(
+            perfil(perfilRisco="CONSERVADOR", horizonte="CURTO_PRAZO", objetivo="CRESCIMENTO_PATRIMONIO", valorDisponivel=1000),
+            titulo(tipo="CDB", indexador="PREFIXADO", vencimento=data_em(3000), liquidez="NO_VENCIMENTO",
+                   garantidoFGC=False, investimentoMinimo=5000),
+        )
+        assert resultado.score == 10
+        assert resultado.compatibilidade == "BAIXA"
+
+    def test_renda_passiva_deve_preferir_titulos_isentos(self):
+        base = perfil(perfilRisco="MODERADO", horizonte="MEDIO_PRAZO", objetivo="RENDA_PASSIVA", valorDisponivel=9999)
+        isento = ranquear_um(base, titulo(tipo="LCA", indexador="CDI", vencimento=data_em(1000), liquidez="NO_VENCIMENTO",
+                                          isentoIR=True, garantidoFGC=True, investimentoMinimo=1000))
+        tributado = ranquear_um(base, titulo(tipo="CDB", indexador="CDI", vencimento=data_em(1000), liquidez="NO_VENCIMENTO",
+                                             garantidoFGC=True, investimentoMinimo=1000))
+        assert isento.score - tributado.score == 10
+
+
 class TestIndexadorXPerfilRisco:
-    @pytest.mark.parametrize("indexador", ["SELIC", "CDI"])
-    def test_conservador_com_indexador_previsivel_deve_pontuar_mais(self, indexador):
-        favoravel = ranquear_um(perfil(perfilRisco="CONSERVADOR"), titulo(indexador=indexador, investimentoMinimo=999999))
-        neutro = ranquear_um(perfil(perfilRisco="CONSERVADOR"), titulo(indexador="PREFIXADO", investimentoMinimo=999999))
-        assert favoravel.score > neutro.score
-
-    def test_arrojado_com_prefixado_deve_pontuar_mais(self):
-        favoravel = ranquear_um(perfil(perfilRisco="ARROJADO"), titulo(indexador="PREFIXADO", investimentoMinimo=999999))
-        neutro = ranquear_um(perfil(perfilRisco="ARROJADO"), titulo(indexador="IPCA", investimentoMinimo=999999))
-        assert favoravel.score > neutro.score
-
-    def test_moderado_nao_deve_receber_bonus_de_indexador_previsivel_nem_prefixado(self):
-        selic = ranquear_um(perfil(perfilRisco="MODERADO"), titulo(indexador="SELIC", investimentoMinimo=999999))
-        prefixado = ranquear_um(perfil(perfilRisco="MODERADO"), titulo(indexador="PREFIXADO", investimentoMinimo=999999))
-        assert selic.score == prefixado.score
+    @pytest.mark.parametrize("risco,melhor,pior", [
+        ("CONSERVADOR", "SELIC", "PREFIXADO"),
+        ("CONSERVADOR", "CDI", "IPCA"),
+        ("MODERADO", "IPCA", "CDI"),
+        ("ARROJADO", "PREFIXADO", "SELIC"),
+    ])
+    def test_cada_perfil_deve_preferir_o_seu_indexador(self, risco, melhor, pior):
+        a = ranquear_um(perfil(perfilRisco=risco, objetivo="RENDA_PASSIVA"), titulo(indexador=melhor))
+        b = ranquear_um(perfil(perfilRisco=risco, objetivo="RENDA_PASSIVA"), titulo(indexador=pior))
+        assert a.score > b.score
 
 
 class TestIndexadorXObjetivo:
-    def test_preservar_capital_com_ipca_deve_pontuar_mais(self):
-        favoravel = ranquear_um(perfil(objetivo="PRESERVAR_CAPITAL"), titulo(indexador="IPCA", investimentoMinimo=999999))
-        neutro = ranquear_um(perfil(objetivo="PRESERVAR_CAPITAL"), titulo(indexador="CDI", investimentoMinimo=999999))
-        assert favoravel.score > neutro.score
+    def test_preservar_capital_deve_dar_o_bonus_de_inflacao_ao_ipca(self):
+        ipca = ranquear_um(perfil(perfilRisco="MODERADO", objetivo="PRESERVAR_CAPITAL"), titulo(indexador="IPCA"))
+        cdi = ranquear_um(perfil(perfilRisco="MODERADO", objetivo="PRESERVAR_CAPITAL"), titulo(indexador="CDI"))
+        assert ipca.score - cdi.score == 15
 
-    def test_renda_passiva_nao_deve_receber_bonus_de_protecao_inflacao(self):
-        ipca = ranquear_um(perfil(objetivo="RENDA_PASSIVA"), titulo(indexador="IPCA", investimentoMinimo=999999))
-        cdi = ranquear_um(perfil(objetivo="RENDA_PASSIVA"), titulo(indexador="CDI", investimentoMinimo=999999))
-        assert ipca.score == cdi.score
+    def test_para_o_conservador_o_pos_fixado_segue_na_frente_mesmo_preservando_capital(self):
+        ipca = ranquear_um(perfil(perfilRisco="CONSERVADOR", objetivo="PRESERVAR_CAPITAL"), titulo(indexador="IPCA"))
+        cdi = ranquear_um(perfil(perfilRisco="CONSERVADOR", objetivo="PRESERVAR_CAPITAL"), titulo(indexador="CDI"))
+        assert cdi.score - ipca.score == 10
+
+    def test_crescimento_deve_preferir_taxa_travada_ou_inflacao(self):
+        prefixado = ranquear_um(perfil(perfilRisco="MODERADO", objetivo="CRESCIMENTO_PATRIMONIO"), titulo(indexador="PREFIXADO"))
+        cdi = ranquear_um(perfil(perfilRisco="MODERADO", objetivo="CRESCIMENTO_PATRIMONIO"), titulo(indexador="CDI"))
+        assert prefixado.score - cdi.score == 7
 
 
 class TestHorizonteXVencimento:
     def test_vencimento_dentro_do_horizonte_deve_pontuar_mais(self):
-        dentro = ranquear_um(
-            perfil(horizonte="CURTO_PRAZO"),
-            titulo(vencimento=data_em(100), investimentoMinimo=999999),
-        )
-        muito_alem = ranquear_um(
-            perfil(horizonte="CURTO_PRAZO"),
-            titulo(vencimento=data_em(3000), investimentoMinimo=999999),
-        )
-        assert dentro.score > muito_alem.score
+        dentro = ranquear_um(perfil(horizonte="CURTO_PRAZO"), titulo(vencimento=data_em(100)))
+        muito_alem = ranquear_um(perfil(horizonte="CURTO_PRAZO"), titulo(vencimento=data_em(3000)))
+        assert dentro.score - muito_alem.score == 35
 
-    def test_distancia_de_um_nivel_deve_ser_neutra(self):
-        resultado = ranquear_um(
-            perfil(horizonte="CURTO_PRAZO", perfilRisco="MODERADO", objetivo="CRESCIMENTO_PATRIMONIO",
-                   valorDisponivel=1),
-            titulo(
-                vencimento=data_em(800),
-                indexador="CDI", liquidez="NO_VENCIMENTO",
-                isentoIR=False, garantidoFGC=False, investimentoMinimo=999999,
-            ),
-        )
-        assert resultado.score == 0
+    def test_distancia_de_um_nivel_deve_dar_pontuacao_parcial(self):
+        dentro = ranquear_um(perfil(horizonte="CURTO_PRAZO"), titulo(vencimento=data_em(100)))
+        vizinho = ranquear_um(perfil(horizonte="CURTO_PRAZO"), titulo(vencimento=data_em(800)))
+        assert dentro.score - vizinho.score == 15
 
     @pytest.mark.parametrize("dias,horizonte_esperado", [
         (365, "CURTO_PRAZO"), (366, "MEDIO_PRAZO"), (1825, "MEDIO_PRAZO"), (1826, "LONGO_PRAZO"),
     ])
     def test_fronteiras_de_classificacao_de_horizonte(self, dias, horizonte_esperado):
-        resultado = ranquear_um(
-            perfil(horizonte=horizonte_esperado),
-            titulo(vencimento=data_em(dias), investimentoMinimo=999999),
-        )
-        neutro = ranquear_um(
-            perfil(horizonte=horizonte_esperado),
-            titulo(vencimento=data_em(dias), indexador="XXPREF", investimentoMinimo=999999) if False else
-            titulo(vencimento=data_em(1), investimentoMinimo=999999),
-        )
-        # o título cai exatamente no horizonte esperado -> deve pontuar o bônus de "dentro"
-        assert resultado.score >= neutro.score
+        criterios = ranking_service._avaliar_criterios_fixa(
+            ranking_service.AtivoFixoSchema(**titulo(vencimento=data_em(dias))), perfil(horizonte=horizonte_esperado))
+        assert "vencimento_no_horizonte" in criterios
 
 
 class TestLiquidezXHorizonte:
-    def test_curto_prazo_com_liquidez_diaria_deve_pontuar_mais(self):
-        favoravel = ranquear_um(
-            perfil(horizonte="CURTO_PRAZO"),
-            titulo(liquidez="DIARIA", vencimento=data_em(800), investimentoMinimo=999999),
-        )
-        neutro = ranquear_um(
-            perfil(horizonte="CURTO_PRAZO"),
-            titulo(liquidez="NO_VENCIMENTO", vencimento=data_em(800), investimentoMinimo=999999),
-        )
-        assert favoravel.score > neutro.score
-
-    def test_medio_prazo_nao_deve_receber_bonus_de_liquidez_diaria(self):
-        diaria = ranquear_um(
-            perfil(horizonte="MEDIO_PRAZO"),
-            titulo(liquidez="DIARIA", vencimento=data_em(800), investimentoMinimo=999999),
-        )
-        vencimento_fixo = ranquear_um(
-            perfil(horizonte="MEDIO_PRAZO"),
-            titulo(liquidez="NO_VENCIMENTO", vencimento=data_em(800), investimentoMinimo=999999),
-        )
-        assert diaria.score == vencimento_fixo.score
-
-
-class TestIsencaoIRXObjetivo:
-    def test_renda_passiva_isento_deve_pontuar_mais(self):
-        isento = ranquear_um(perfil(objetivo="RENDA_PASSIVA"), titulo(isentoIR=True, investimentoMinimo=999999))
-        tributado = ranquear_um(perfil(objetivo="RENDA_PASSIVA"), titulo(isentoIR=False, investimentoMinimo=999999))
-        assert isento.score > tributado.score
-
-    def test_crescimento_patrimonio_nao_deve_receber_bonus_de_isencao(self):
-        isento = ranquear_um(perfil(objetivo="CRESCIMENTO_PATRIMONIO"), titulo(isentoIR=True, investimentoMinimo=999999))
-        tributado = ranquear_um(perfil(objetivo="CRESCIMENTO_PATRIMONIO"), titulo(isentoIR=False, investimentoMinimo=999999))
-        assert isento.score == tributado.score
+    @pytest.mark.parametrize("horizonte,pontos_no_vencimento", [
+        ("CURTO_PRAZO", 0), ("MEDIO_PRAZO", 8), ("LONGO_PRAZO", 15),
+    ])
+    def test_resgate_so_no_vencimento_pesa_menos_quanto_mais_curto_o_horizonte(self, horizonte, pontos_no_vencimento):
+        diaria = ranquear_um(perfil(horizonte=horizonte), titulo(liquidez="DIARIA", vencimento=data_em(800)))
+        no_vencimento = ranquear_um(perfil(horizonte=horizonte), titulo(liquidez="NO_VENCIMENTO", vencimento=data_em(800)))
+        assert diaria.score - no_vencimento.score == 15 - pontos_no_vencimento
 
 
 class TestInvestimentoMinimoXValorDisponivel:
     def test_investimento_dentro_do_valor_disponivel_deve_pontuar_mais(self):
         dentro = ranquear_um(perfil(valorDisponivel=1000), titulo(investimentoMinimo=500))
         fora = ranquear_um(perfil(valorDisponivel=1000), titulo(investimentoMinimo=5000))
-        assert dentro.score > fora.score
+        assert dentro.score - fora.score == 10
 
     def test_investimento_igual_ao_valor_disponivel_deve_pontuar(self):
         igual = ranquear_um(perfil(valorDisponivel=1000), titulo(investimentoMinimo=1000))
@@ -160,37 +180,26 @@ class TestInvestimentoMinimoXValorDisponivel:
         assert igual.score > acima.score
 
 
-class TestGarantiaFgcXPerfilConservador:
-    def test_conservador_com_garantia_fgc_deve_pontuar_mais(self):
-        garantido = ranquear_um(perfil(perfilRisco="CONSERVADOR"), titulo(garantidoFGC=True, investimentoMinimo=999999))
-        nao_garantido = ranquear_um(perfil(perfilRisco="CONSERVADOR"), titulo(garantidoFGC=False, investimentoMinimo=999999))
-        assert garantido.score > nao_garantido.score
-
-    def test_moderado_nao_deve_receber_bonus_de_garantia_fgc(self):
-        garantido = ranquear_um(perfil(perfilRisco="MODERADO"), titulo(garantidoFGC=True, investimentoMinimo=999999))
-        nao_garantido = ranquear_um(perfil(perfilRisco="MODERADO"), titulo(garantidoFGC=False, investimentoMinimo=999999))
-        assert garantido.score == nao_garantido.score
+class TestGarantia:
+    def test_tesouro_e_titulo_com_fgc_devem_somar_a_garantia(self):
+        tesouro = ranquear_um(perfil(), titulo(tipo="TESOURO"))
+        cdb_fgc = ranquear_um(perfil(), titulo(tipo="CDB", garantidoFGC=True))
+        cdb_sem = ranquear_um(perfil(), titulo(tipo="CDB", garantidoFGC=False))
+        assert tesouro.score == cdb_fgc.score == cdb_sem.score + 5
 
 
 class TestNormalizacaoEClassificacao:
     def test_score_nunca_deve_ser_negativo(self):
         resultado = ranquear_um(
-            perfil(horizonte="CURTO_PRAZO"),
-            titulo(vencimento=data_em(3000), investimentoMinimo=999999),
+            perfil(perfilRisco="CONSERVADOR", horizonte="CURTO_PRAZO", objetivo="PRESERVAR_CAPITAL", valorDisponivel=1),
+            titulo(tipo="CDB", indexador="PREFIXADO", vencimento=data_em(3000), liquidez="NO_VENCIMENTO", investimentoMinimo=999999),
         )
-        assert resultado.score >= 0
-
-    def test_score_nunca_deve_exceder_100(self):
-        resultado = ranquear_um(
-            perfil(perfilRisco="CONSERVADOR", horizonte="CURTO_PRAZO", objetivo="RENDA_PASSIVA", valorDisponivel=999999),
-            titulo(indexador="SELIC", vencimento=data_em(100), liquidez="DIARIA", isentoIR=True, garantidoFGC=True, investimentoMinimo=30),
-        )
-        assert resultado.score <= 100
+        assert resultado.score == 0
 
     @pytest.mark.parametrize("score,esperado", [
-        (0, "BAIXA"), (39, "BAIXA"), (40, "MEDIA"), (69, "MEDIA"), (70, "ALTA"), (100, "ALTA"),
+        (0, "BAIXA"), (49, "BAIXA"), (50, "MEDIA"), (79, "MEDIA"), (80, "ALTA"), (100, "ALTA"),
     ])
-    def test_classificacao_deve_respeitar_limiares(self, score, esperado):
+    def test_classificacao_deve_usar_alta_a_partir_de_80_e_media_a_partir_de_50(self, score, esperado):
         assert _classificar_compatibilidade(score) == esperado
 
 
@@ -199,11 +208,9 @@ class TestJustificativa:
         resultado = ranquear_um(perfil(), titulo())
         assert resultado.justificativa
 
-    def test_titulo_sem_nenhum_criterio_positivo_deve_ter_justificativa_generica(self):
+    def test_deve_explicar_o_motivo_principal(self):
         resultado = ranquear_um(
-            perfil(perfilRisco="MODERADO", horizonte="CURTO_PRAZO", objetivo="CRESCIMENTO_PATRIMONIO",
-                   valorDisponivel=1),
-            titulo(indexador="CDI", vencimento=data_em(800), liquidez="NO_VENCIMENTO", isentoIR=False,
-                   garantidoFGC=False, investimentoMinimo=999999),
+            perfil(perfilRisco="CONSERVADOR", horizonte="CURTO_PRAZO"),
+            titulo(indexador="SELIC", vencimento=data_em(100)),
         )
-        assert resultado.justificativa == "Título dentro dos critérios mínimos avaliados para o seu perfil."
+        assert resultado.justificativa.startswith("Indexador SELIC é o mais indicado para o perfil conservador")
