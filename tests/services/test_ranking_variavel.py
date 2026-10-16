@@ -221,3 +221,38 @@ class TestJustificativa:
             ativo(volatilidade="MEDIA", dy=8.0, preco=999999),
         )
         assert resultado.justificativa == "Oscilação de preço aceitável para o seu perfil de risco."
+
+
+class TestCriteriosExplicados:
+    def test_deve_devolver_os_criterios_do_que_somou_ao_que_tirou(self):
+        resultado = ranquear_um(
+            perfil(perfilRisco="CONSERVADOR", horizonte="LONGO_PRAZO", objetivo="RENDA_PASSIVA",
+                   valorDisponivel=9999, setoresPreferidos=evitar("Energia")),
+            ativo(setor="Energia", preco=10, volatilidade="ALTA", dy=7),
+        )
+        assert [(c.chave, c.pontos) for c in resultado.criterios] == [
+            ("dy_renda_passiva", 25), ("horizonte_longo", 15), ("preco_acessivel", 10),
+            ("volatilidade_alta_demais", -10), ("setor_evitado", -20),
+        ]
+        assert all(c.descricao for c in resultado.criterios)
+
+    @pytest.mark.parametrize("risco", ["CONSERVADOR", "MODERADO", "ARROJADO"])
+    @pytest.mark.parametrize("horizonte", ["CURTO_PRAZO", "MEDIO_PRAZO", "LONGO_PRAZO"])
+    @pytest.mark.parametrize("objetivo", ["RENDA_PASSIVA", "CRESCIMENTO_PATRIMONIO", "PRESERVAR_CAPITAL"])
+    def test_todo_criterio_deve_ter_descricao_e_a_soma_deve_explicar_o_score(self, risco, horizonte, objetivo):
+        for volatilidade in ["BAIXA", "MEDIA", "ALTA"]:
+            for dy in [1.0, 4.0, 8.0]:
+                for setor in ["Energia", "Bancos", "Varejo"]:
+                    perfil_teste = perfil(
+                        perfilRisco=risco, horizonte=horizonte, objetivo=objetivo, valorDisponivel=50,
+                        setoresPreferidos=preferir("Energia") + evitar("Bancos"),
+                    )
+                    resultado = ranquear_um(perfil_teste, ativo(setor=setor, volatilidade=volatilidade, dy=dy, preco=40))
+                    criterios = ranking_service._avaliar_criterios(
+                        ranking_service.AtivoVariavelSchema(**ativo(setor=setor, volatilidade=volatilidade, dy=dy, preco=40)),
+                        perfil_teste,
+                    )
+                    assert set(criterios) <= set(cfg.DESCRICOES_VARIAVEL)
+                    soma = sum(c.pontos for c in resultado.criterios)
+                    assert max(0, min(100, soma)) == resultado.score
+

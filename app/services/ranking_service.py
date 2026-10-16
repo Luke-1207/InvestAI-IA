@@ -5,6 +5,7 @@ from app.models import (
     AtivoFixoSchema,
     AtivoRankeadoSchema,
     AtivoVariavelSchema,
+    CriterioScoreSchema,
     PerfilSchema,
     RankingRequestSchema,
     RankingResponseSchema,
@@ -52,6 +53,7 @@ def _rankear_ativo(ativo: AtivoVariavelSchema, perfil: PerfilSchema) -> AtivoRan
         score=score,
         compatibilidade=_classificar_compatibilidade(score),
         justificativa=_gerar_justificativa(ativo, perfil, criterios),
+        criterios=_listar_criterios(criterios, cfg.DESCRICOES_VARIAVEL),
     )
 
 
@@ -115,6 +117,15 @@ def _preferencia_do_setor(setor: str, perfil: PerfilSchema):
     return None
 
 
+def _listar_criterios(criterios: dict, descricoes: dict) -> List[CriterioScoreSchema]:
+    itens = [
+        CriterioScoreSchema(chave=chave, descricao=descricoes[chave], pontos=pontos)
+        for chave, pontos in criterios.items()
+        if pontos != 0 and chave in descricoes
+    ]
+    return sorted(itens, key=lambda item: item.pontos, reverse=True)
+
+
 def _classificar_compatibilidade(score: int) -> str:
     if score >= cfg.LIMIAR_ALTA:
         return "ALTA"
@@ -175,6 +186,7 @@ def _rankear_titulo(titulo: AtivoFixoSchema, perfil: PerfilSchema) -> AtivoRanke
         score=score,
         compatibilidade=_classificar_compatibilidade(score),
         justificativa=_gerar_justificativa_fixa(titulo, perfil, criterios),
+        criterios=_listar_criterios(criterios, cfg.DESCRICOES_FIXA),
     )
 
 

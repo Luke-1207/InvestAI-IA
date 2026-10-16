@@ -214,3 +214,34 @@ class TestJustificativa:
             titulo(indexador="SELIC", vencimento=data_em(100)),
         )
         assert resultado.justificativa.startswith("Indexador SELIC é o mais indicado para o perfil conservador")
+
+
+class TestCriteriosExplicados:
+    def test_deve_devolver_os_criterios_com_descricao(self):
+        resultado = ranquear_um(
+            perfil(perfilRisco="CONSERVADOR", horizonte="CURTO_PRAZO", objetivo="CRESCIMENTO_PATRIMONIO", valorDisponivel=1000),
+            titulo(tipo="CDB", indexador="PREFIXADO", vencimento=data_em(3000), liquidez="NO_VENCIMENTO",
+                   garantidoFGC=False, investimentoMinimo=5000),
+        )
+        assert [(c.chave, c.pontos) for c in resultado.criterios] == [
+            ("taxa_crescimento", 15), ("indexador_aceitavel", 5), ("vencimento_muito_alem_horizonte", -10),
+        ]
+        assert resultado.criterios[-1].descricao == "Vence muito longe do prazo em que você pretende usar o dinheiro"
+
+    @pytest.mark.parametrize("risco", ["CONSERVADOR", "MODERADO", "ARROJADO"])
+    @pytest.mark.parametrize("horizonte", ["CURTO_PRAZO", "MEDIO_PRAZO", "LONGO_PRAZO"])
+    @pytest.mark.parametrize("objetivo", ["RENDA_PASSIVA", "CRESCIMENTO_PATRIMONIO", "PRESERVAR_CAPITAL"])
+    def test_todo_criterio_deve_ter_descricao_e_a_soma_deve_explicar_o_score(self, risco, horizonte, objetivo):
+        for indexador in ["SELIC", "CDI", "IPCA", "PREFIXADO"]:
+            for dias in [100, 1000, 3000]:
+                for liquidez in ["DIARIA", "NO_VENCIMENTO"]:
+                    perfil_teste = perfil(perfilRisco=risco, horizonte=horizonte, objetivo=objetivo, valorDisponivel=5000)
+                    dados = titulo(tipo="TESOURO" if indexador == "SELIC" else "LCI", indexador=indexador,
+                                   vencimento=data_em(dias), liquidez=liquidez, isentoIR=dias == 1000,
+                                   garantidoFGC=dias != 3000, investimentoMinimo=10 if dias == 100 else 99999)
+                    resultado = ranquear_um(perfil_teste, dados)
+                    criterios = ranking_service._avaliar_criterios_fixa(ranking_service.AtivoFixoSchema(**dados), perfil_teste)
+                    assert set(criterios) <= set(cfg.DESCRICOES_FIXA)
+                    soma = sum(c.pontos for c in resultado.criterios)
+                    assert max(0, min(100, soma)) == resultado.score
+

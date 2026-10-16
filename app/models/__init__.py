@@ -14,7 +14,7 @@ from app.models.enums import (
     Volatilidade,
 )
 from app.models.perfil import PerfilSchema, SetorPreferidoSchema
-from app.models.ranking import AtivoRankeadoSchema, RankingRequestSchema, RankingResponseSchema
+from app.models.ranking import AtivoRankeadoSchema, CriterioScoreSchema, RankingRequestSchema, RankingResponseSchema
 from app.models.resumo import ResumoRequestSchema, ResumoResponseSchema
 
 __all__ = [
@@ -22,6 +22,7 @@ __all__ = [
     "AtivoVariavelSchema",
     "Variacao52SemanasSchema",
     "AtivoRankeadoSchema",
+    "CriterioScoreSchema",
     "PerfilSchema",
     "SetorPreferidoSchema",
     "RankingRequestSchema",
