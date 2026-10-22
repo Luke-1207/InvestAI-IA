@@ -9,18 +9,29 @@ retorno) e diga qual deles tende a se encaixar melhor no perfil informado,
 com uma justificativa breve. Os dois ativos podem ser de categorias
 diferentes (por exemplo, uma ação e um título de renda fixa) — nesse caso,
 compare pelo que for comparável (risco, liquidez, horizonte), sem forçar
-uma métrica que só faz sentido pra um dos dois. Máximo de 5 frases.
+uma métrica que só faz sentido pra um dos dois. Ao citar os ativos, use
+exatamente os nomes que aparecem entre parênteses abaixo. Máximo de 5 frases.
 
-ATIVO A ({codigoA}):
+ATIVO A ({rotuloA}):
 {descricaoA}
 
-ATIVO B ({codigoB}):
+ATIVO B ({rotuloB}):
 {descricaoB}
 
 PERFIL DO INVESTIDOR:
 - Risco: {perfilRisco} | Objetivo: {objetivo} | Horizonte: {horizonte}
 
 Responda apenas com o texto do veredito, sem títulos ou marcadores."""
+
+
+def rotulo_ativo(ativo: Union[AtivoVariavelSchema, AtivoFixoSchema]) -> str:
+    if isinstance(ativo, AtivoVariavelSchema):
+        return ativo.codigo
+    if ativo.nome:
+        return ativo.nome
+    if ativo.emissor:
+        return f"{ativo.tipo.value} {ativo.emissor}"
+    return ativo.codigo
 
 
 def _descrever_ativo(ativo: Union[AtivoVariavelSchema, AtivoFixoSchema]) -> str:
@@ -46,9 +57,9 @@ def montar_prompt(
     perfil: PerfilSchema,
 ) -> str:
     return _TEMPLATE.format(
-        codigoA=ativo_a.codigo,
+        rotuloA=rotulo_ativo(ativo_a),
         descricaoA=_descrever_ativo(ativo_a),
-        codigoB=ativo_b.codigo,
+        rotuloB=rotulo_ativo(ativo_b),
         descricaoB=_descrever_ativo(ativo_b),
         perfilRisco=perfil.perfilRisco.value,
         objetivo=perfil.objetivo.value,

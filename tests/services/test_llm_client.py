@@ -22,6 +22,9 @@ def test_gerar_texto_deve_retornar_conteudo_quando_chamada_bem_sucedida(mock_pos
 
     assert resultado == "Texto gerado."
     mock_post.assert_called_once()
+    payload = mock_post.call_args.kwargs["json"]
+    assert payload["max_tokens"] == 300
+    assert "reasoning_effort" not in payload
 
 
 @patch("app.services.llm_client.settings")
@@ -74,4 +77,42 @@ def test_gerar_texto_deve_lancar_erro_quando_payload_de_resposta_malformado(mock
     mock_post.return_value = resposta_mock
 
     with pytest.raises(LlmIndisponivelError):
+        gerar_texto("prompt qualquer")
+
+
+@patch("app.services.llm_client.settings")
+@patch("app.services.llm_client.httpx.post")
+def test_gerar_texto_deve_limitar_raciocinio_em_modelos_gpt_oss(mock_post, mock_settings):
+    mock_settings.LLM_PROVIDER = "groq"
+    mock_settings.LLM_API_KEY = "chave-teste"
+    mock_settings.LLM_MODEL = "openai/gpt-oss-120b"
+
+    resposta_mock = MagicMock()
+    resposta_mock.json.return_value = {"choices": [{"message": {"content": "Texto gerado."}}]}
+    resposta_mock.raise_for_status = MagicMock()
+    mock_post.return_value = resposta_mock
+
+    assert gerar_texto("prompt qualquer") == "Texto gerado."
+
+    payload = mock_post.call_args.kwargs["json"]
+    assert payload["model"] == "openai/gpt-oss-120b"
+    assert payload["reasoning_effort"] == "low"
+    assert payload["include_reasoning"] is False
+    assert payload["max_tokens"] == 1500
+
+
+@pytest.mark.parametrize("conteudo", ["", "   ", None])
+@patch("app.services.llm_client.settings")
+@patch("app.services.llm_client.httpx.post")
+def test_gerar_texto_deve_lancar_erro_quando_resposta_vem_vazia(mock_post, mock_settings, conteudo):
+    mock_settings.LLM_PROVIDER = "groq"
+    mock_settings.LLM_API_KEY = "chave-teste"
+    mock_settings.LLM_MODEL = "openai/gpt-oss-120b"
+
+    resposta_mock = MagicMock()
+    resposta_mock.json.return_value = {"choices": [{"message": {"content": conteudo}}]}
+    resposta_mock.raise_for_status = MagicMock()
+    mock_post.return_value = resposta_mock
+
+    with pytest.raises(LlmIndisponivelError, match="vazia"):
         gerar_texto("prompt qualquer")

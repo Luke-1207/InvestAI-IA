@@ -26,11 +26,18 @@ class RankingRequestSchema(BaseModel):
         return self
 
 
+class CriterioScoreSchema(BaseModel):
+    chave: str
+    descricao: str
+    pontos: int
+
+
 class AtivoRankeadoSchema(BaseModel):
     codigo: str = Field(..., min_length=1)
     score: int = Field(..., ge=0, le=100, description="Score de compatibilidade, 0-100")
     compatibilidade: Compatibilidade
     justificativa: str
+    criterios: List[CriterioScoreSchema] = Field(default_factory=list)
 
 
 class RankingResponseSchema(BaseModel):

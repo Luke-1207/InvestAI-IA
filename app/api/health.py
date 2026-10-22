@@ -2,6 +2,7 @@ import pika
 from fastapi import APIRouter
 
 from app.config import settings
+from app.services.llm_health import verificar_llm
 
 router = APIRouter(tags=["Health"])
 
@@ -24,9 +25,10 @@ def _verificar_rabbitmq() -> bool:
         return False
 
 
-@router.get("/health", summary="Verifica a saúde do microsserviço e a conexão com o RabbitMQ")
-def health_check():
+@router.get("/health", summary="Verifica a saúde do microsserviço, a conexão com o RabbitMQ e o acesso ao LLM")
+def health_check(forcar: bool = False):
     return {
         "status": "ok",
         "rabbitmq": _verificar_rabbitmq(),
+        "llm": verificar_llm(forcar=forcar),
     }

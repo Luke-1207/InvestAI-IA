@@ -81,3 +81,57 @@ def test_gerar_veredito_deve_funcionar_comparando_ativos_de_categorias_diferente
     assert "TAEE3" in prompt_enviado
     assert "TESOURO_SELIC_2029" in prompt_enviado
     assert response.veredito == "Comparação entre ação e título de renda fixa."
+
+
+ID_TITULO_PRIVADO = "f583a5d0-9cd4-4e23-a311-663954fb794d"
+
+
+def titulo_privado_dict(**extras):
+    return dict(
+        codigo=ID_TITULO_PRIVADO, tipo="CDB", indexador="CDI",
+        taxaPercentual=112.0, vencimento="2027-05-31",
+        investimentoMinimo=500.0, liquidez="DIARIA", **extras,
+    )
+
+
+def request_com_titulo_privado(**extras):
+    return ComparacaoRequestSchema(
+        correlationId=CORRELATION_ID,
+        perfil=PerfilSchema(**perfil_dict()),
+        ativoA=AtivoVariavelSchema(**ativo_variavel_dict(codigo="PETR4")),
+        ativoB=AtivoFixoSchema(**titulo_privado_dict(**extras)),
+    )
+
+
+@patch("app.services.comparacao_service.gerar_texto")
+def test_gerar_veredito_deve_citar_o_nome_do_titulo_e_nao_o_id_no_fallback(mock_gerar_texto):
+    mock_gerar_texto.side_effect = LlmIndisponivelError("timeout")
+
+    response = comparacao_service.gerar_veredito(
+        request_com_titulo_privado(nome="CDB - Banco Inter", emissor="Banco Inter"))
+
+    assert "PETR4" in response.veredito
+    assert "CDB - Banco Inter" in response.veredito
+    assert ID_TITULO_PRIVADO not in response.veredito
+
+
+@patch("app.services.comparacao_service.gerar_texto")
+def test_gerar_veredito_deve_enviar_o_nome_do_titulo_e_nao_o_id_no_prompt(mock_gerar_texto):
+    mock_gerar_texto.return_value = "Veredito."
+
+    comparacao_service.gerar_veredito(
+        request_com_titulo_privado(nome="CDB - Banco Inter", emissor="Banco Inter"))
+
+    prompt_enviado = mock_gerar_texto.call_args.args[0]
+    assert "ATIVO B (CDB - Banco Inter)" in prompt_enviado
+    assert ID_TITULO_PRIVADO not in prompt_enviado
+
+
+@patch("app.services.comparacao_service.gerar_texto")
+def test_gerar_veredito_deve_usar_tipo_e_emissor_quando_o_titulo_nao_tem_nome(mock_gerar_texto):
+    mock_gerar_texto.side_effect = LlmIndisponivelError("timeout")
+
+    response = comparacao_service.gerar_veredito(request_com_titulo_privado(emissor="Banco Inter"))
+
+    assert "CDB Banco Inter" in response.veredito
+    assert ID_TITULO_PRIVADO not in response.veredito
